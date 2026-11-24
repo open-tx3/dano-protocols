@@ -1,0 +1,173 @@
+// Danogo concentrated-liquidity pool (CLMM): one swap through one pool.
+//
+// Mirrors `DanogoClmm.submitSwap` from the Danogo CLMM SDK
+// (github.com/dano-finance/clmm-sdk @ 0416dc1) for a request with a single
+// pool entry. The trader pays token X of the pool (ADA, lovelace) and takes
+// token Y. Routing over several pools stays in the SDK.
+
+// ------------------------------------------------------------------
+// Environment (per network, from `.env.<profile>`)
+// ------------------------------------------------------------------
+env {
+    /// UTxO carrying the pool validator as a reference script.
+    pool_script_ref: UtxoRef,
+    /// Protocol configuration UTxO (platform fee rate and flat swap fee).
+    protocol_config_ref: UtxoRef,
+}
+
+// ------------------------------------------------------------------
+// Parties
+// ------------------------------------------------------------------
+
+/// Wallet that pays token X, receives token Y and covers fees.
+party Trader;
+/// Address of the pool UTxO: the pool validator plus the pool's own staking script.
+party Pool;
+/// Reward account of the pool's staking script, withdrawn on the pool's first swap of a Danogo epoch.
+party PoolStaking;
+/// Reward account of the pool validator, whose zero withdrawal runs the swap check (bound by the profile).
+party PoolCheck;
+
+// ------------------------------------------------------------------
+// Types
+// ------------------------------------------------------------------
+
+// Square-root price bound as a rational.
+type Ratio {
+    num: Int,
+    den: Int,
+}
+
+// Inline datum of a pool UTxO. Assets are `[policy id, asset name]`; ADA is `["", ""]`.
+type PoolDatum {
+    token_x: List<Bytes>,
+    token_y: List<Bytes>,
+    lp_fee_rate: Int,
+    platform_fee_x: Int,
+    platform_fee_y: Int,
+    total_swap_fee: Int,
+    sqrt_lower_price: Ratio,
+    sqrt_upper_price: Ratio,
+    min_x_change: Int,
+    min_y_change: Int,
+    circulating_lp_token: Int,
+    last_withdraw_epoch: Int,
+}
+
+// Inline datum of the protocol configuration UTxO.
+type ProtocolConfigDatum {
+    platform_fee_rate: Int,
+    swap_fee: Int,
+}
+
+// ------------------------------------------------------------------
+// Transactions
+// ------------------------------------------------------------------
+
+/// Swap `amount_in` lovelace (token X) for exactly `amount_out` units of the
+/// pool's token Y through the pool at `pool_ref`, on the pool's first swap of
+/// the current Danogo epoch (the pool's staking reward is withdrawn with it).
+tx swap_single_pool(
+    /// Pool UTxO to swap through (the SDK's `poolOutRef`).
+    pool_ref: UtxoRef,
+    /// UTxO carrying the pool's staking script as a reference script (the SDK's `stakingOutRef`).
+    staking_ref: UtxoRef,
+    /// Trader UTxO that pays; pinning it fixes the order of the transaction inputs.
+    trader_utxo: UtxoRef,
+    /// Lovelace of token X (ADA) paid into the pool; the SDK's positive `deltaAmount`.
+    amount_in: Int,
+    /// Base units of token Y taken from the pool. The pool accepts only the exact
+    /// curve output for `amount_in` (the SDK's `calculateSwapOut` quote); check it
+    /// against your minimum (the SDK's `minOutChangeAmount`) before building.
+    amount_out: Int,
+    /// Danogo epoch at the validity start; the pool records it as `last_withdraw_epoch`.
+    current_epoch: Int,
+    /// Lovelace in the pool's staking reward account, withdrawn in full.
+    staking_reward: Int,
+    /// One byte: index of the pool input among the sorted transaction inputs.
+    pool_index: Bytes,
+    /// One byte: index of the protocol configuration among the sorted reference inputs.
+    config_index: Bytes,
+    /// 32 bytes: `amount_in` as a big-endian unsigned integer (the signed delta, X in).
+    delta_word: Bytes,
+    /// First valid slot.
+    since_slot: Int,
+    /// Last valid slot.
+    until_slot: Int,
+) {
+    locals {
+        pool_entry: concat(concat(pool_index, 0x00), delta_word),
+    }
+
+    reference protocol_config {
+        ref: protocol_config_ref,
+        datum_is: ProtocolConfigDatum,
+    }
+
+    reference pool_script {
+        ref: pool_script_ref,
+    }
+
+    reference staking_script {
+        ref: staking_ref,
+    }
+
+    input pool {
+        from: Pool,
+        ref: pool_ref,
+        datum_is: PoolDatum,
+        redeemer: concat(concat(pool_index, 0x03), pool_entry),
+    }
+
+    input source {
+        from: Trader,
+        ref: trader_utxo,
+        min_amount: Ada(amount_in) + fees,
+    }
+
+    collateral {
+        from: Trader,
+        min_amount: Ada(5000000),
+    }
+
+    output {
+        to: Pool,
+        amount: pool + Ada(amount_in) + Ada(protocol_config.swap_fee) - AnyAsset(pool.token_y[0], pool.token_y[1], amount_out),
+        datum: PoolDatum {
+            token_x: pool.token_x,
+            token_y: pool.token_y,
+            lp_fee_rate: pool.lp_fee_rate,
+            platform_fee_x: pool.platform_fee_x + (((amount_in * pool.lp_fee_rate) / 10000) * protocol_config.platform_fee_rate) / 10000,
+            platform_fee_y: pool.platform_fee_y,
+            total_swap_fee: pool.total_swap_fee + protocol_config.swap_fee,
+            sqrt_lower_price: pool.sqrt_lower_price,
+            sqrt_upper_price: pool.sqrt_upper_price,
+            min_x_change: pool.min_x_change,
+            min_y_change: pool.min_y_change,
+            circulating_lp_token: pool.circulating_lp_token,
+            last_withdraw_epoch: current_epoch,
+        },
+    }
+
+    output {
+        to: Trader,
+        amount: source - Ada(amount_in) - Ada(protocol_config.swap_fee) + Ada(staking_reward) + AnyAsset(pool.token_y[0], pool.token_y[1], amount_out) - fees,
+    }
+
+    cardano::withdrawal {
+        from: PoolCheck,
+        amount: 0,
+        redeemer: concat(concat(config_index, 0x03), pool_entry),
+    }
+
+    cardano::withdrawal {
+        from: PoolStaking,
+        amount: staking_reward,
+        redeemer: concat(concat(pool_index, 0x03), pool_entry),
+    }
+
+    validity {
+        since_slot: since_slot,
+        until_slot: until_slot,
+    }
+}

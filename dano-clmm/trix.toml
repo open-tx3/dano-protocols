@@ -1,0 +1,17 @@
+[protocol]
+name = "dano-clmm"
+scope = "open-tx3"
+version = "0.1.0"
+description = "Danogo concentrated-liquidity pool (CLMM) — one swap through one pool"
+main = "main.tx3"
+readme = "README.md"
+repository = "https://github.com/open-tx3/dano-protocols"
+
+[ledger]
+family = "cardano"
+
+# Target profile: the Danogo preprod deployment. `.env.preprod` binds the
+# `env {}` block and the `PoolCheck` party; see fixtures/deployment.json.
+[profiles.preprod]
+network = "cardano-preprod"
+env_file = ".env.preprod"
