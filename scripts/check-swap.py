@@ -5,11 +5,13 @@ Decodes each fixture transaction with its resolved inputs, recomputes the
 Danogo CLMM SDK swap (pool successor, fees, curve output, redeemers, epoch
 withdrawal) and asserts the expected effects. Every negative fixture must fail
 for its named reason. Also checks that the exported TII, the preprod profile,
-the invoke args and the README use the same names. Standard library only.
+the invoke args and the README agree, and that the generated fixtures were
+built from the current `main.tx3` (by TIR digest). Standard library only.
 """
 import copy
 import hashlib
 import json
+import re
 import sys
 from math import isqrt
 from pathlib import Path
@@ -17,10 +19,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 PROTOCOL = ROOT / "dano-clmm"
 FIXTURES = PROTOCOL / "fixtures"
-TII = PROTOCOL / ".tx3/tii/open-tx3/dano-clmm/0.1.0/main.tii"
 TX = "swap_single_pool"
 SWAP_ACTION = 3
 BASE = 10_000
+MAX_VALIDITY_SLOTS = 360  # the pool validator rejects a wider validity interval
+POSITIVE = ("reference-swap.json", "generated-swap.json", "generated-reward-swap.json")
 
 
 class Reject(Exception):
@@ -160,6 +163,7 @@ def load_tx(fx):
         "outputs": [output(o) for o in body[1]],
         "fee": body[2],
         "since_slot": body.get(8),
+        "until_slot": body.get(3),
         "withdrawals": sorted((k.hex(), v) for k, v in body.get(5, {}).items()),
         "redeemers": redeemers,
         "utxos": utxos,
@@ -257,6 +261,8 @@ def check_swap(tx, dep, exp):
     amount_in = exp["amount_in"]
     need(tx["redeemers"].get((0, pool_index)) == swap_bytes(pool_index, pool_index, amount_in), "pool-redeemer")
 
+    need(tx["since_slot"] is not None and tx["until_slot"] is not None, "validity-window")
+    need(tx["until_slot"] - tx["since_slot"] <= MAX_VALIDITY_SLOTS, "validity-window")
     epoch = danogo_epoch(tx["since_slot"], dep)
     need(epoch == exp["current_epoch"], "epoch")
     check_account = dep["pool_script"]["reward_account"]
@@ -278,13 +284,14 @@ def check_swap(tx, dep, exp):
              "staking-redeemer")
 
     quote, platform_fee = sdk_quote(pool_in["lovelace"], pool_in["assets"].get(d_in["token_y"], 0),
-                                    d_in, amount_in, platform_fee_rate)
+                                    d_in, amount_in, platform_fee_rate, reward)
     need(exp["amount_out"] == quote, "amount-out")
 
+    # The redeemer names output 0 as the pool successor.
     successors = [o for o in tx["outputs"] if o["address"] == pool_in["address"]]
-    need(len(successors) == 1, "pool-successor")
+    need(len(successors) == 1 and tx["outputs"][0] is successors[0], "pool-successor")
     pool_out = successors[0]
-    need(pool_out["lovelace"] == pool_in["lovelace"] + amount_in + swap_fee, "pool-value")
+    need(pool_out["lovelace"] == pool_in["lovelace"] + amount_in + swap_fee + reward, "pool-value")
     moved = {k: v for k, v in pool_in["assets"].items()}
     moved[d_in["token_y"]] -= exp["amount_out"]
     need(pool_out["assets"] == {k: v for k, v in moved.items() if v}, "amount-out")
@@ -299,7 +306,7 @@ def check_swap(tx, dep, exp):
     t_addr = t_addr.pop()
     paid = sum(tx["utxos"][r]["lovelace"] for r in trader)
     got = sum(o["lovelace"] for o in tx["outputs"] if o["address"] == t_addr)
-    need(got - paid == reward - amount_in - swap_fee - tx["fee"], "trader-net-ada")
+    need(got - paid == -amount_in - swap_fee - tx["fee"], "trader-net-ada")
     y_paid = sum(tx["utxos"][r]["assets"].get(d_in["token_y"], 0) for r in trader)
     y_got = sum(o["assets"].get(d_in["token_y"], 0) for o in tx["outputs"] if o["address"] == t_addr)
     need(y_got - y_paid == exp["amount_out"], "trader-net-token-y")
@@ -327,8 +334,58 @@ def apply_patch(fx, patch):
     return fx
 
 
+def tii_path():
+    """Locate the TII `trix build` writes for the version in trix.toml."""
+    text = (PROTOCOL / "trix.toml").read_text()
+    section = re.search(r"^\[protocol\]$(.*?)(?=^\[|\Z)", text, re.M | re.S).group(1)
+    meta = dict(re.findall(r'^(scope|name|version)\s*=\s*"([^"]+)"', section, re.M))
+    return PROTOCOL / ".tx3/tii" / meta["scope"] / meta["name"] / meta["version"] / "main.tii"
+
+
+def canonical(value):
+    """Decoded CBOR as JSON-ready data with map entries sorted."""
+    if isinstance(value, dict):
+        return sorted(([canonical(k), canonical(v)] for k, v in value.items()), key=json.dumps)
+    if isinstance(value, (list, tuple)):
+        return [canonical(v) for v in value]
+    if isinstance(value, bytes):
+        return value.hex()
+    if isinstance(value, Tag):
+        return {"tag": value.tag, "value": canonical(value.value)}
+    return value
+
+
+def tir_digest(tii):
+    """SHA-256 of the transaction's decoded TIR, so any change to main.tx3 shows.
+
+    tx3c writes some TIR maps in varying key order, so the digest is taken over
+    the decoded TIR with map entries sorted, not over its bytes.
+    """
+    tir = tii["transactions"][TX]["tir"]
+    body = json.dumps([tir["version"], tir["encoding"], canonical(decode(tir["content"]))])
+    return hashlib.sha256(body.encode()).hexdigest()
+
+
+def check_args(args, fx, dep):
+    """Require the invoke args to be the inputs the generated fixture was built from."""
+    for key, value in fx["expected"].items():
+        assert args.get(key) == value, f"invoke args {key}={args.get(key)!r} != generated fixture {value!r}"
+    tx = load_tx(fx)
+    refs = tx["references"]
+    derived = {
+        "trader_utxo": args.get("trader_utxo") if args.get("trader_utxo") in tx["inputs"] else None,
+        "since_slot": tx["since_slot"],
+        "until_slot": tx["until_slot"],
+        "pool_index": f"{tx['inputs'].index(args['pool_ref']):02x}",
+        "config_index": f"{refs.index(dep['protocol_config']['ref']):02x}",
+        "delta_word": args["amount_in"].to_bytes(32, "big").hex(),
+    }
+    for key, value in derived.items():
+        assert args.get(key) == value, f"invoke args {key}={args.get(key)!r} != generated tx {value!r}"
+
+
 def check_interface(dep):
-    tii = json.loads(TII.read_text())
+    tii = json.loads(tii_path().read_text())
     tx = tii["transactions"][TX]
     params = set(tx["params"]["properties"])
     profile = tii["profiles"]["preprod"]
@@ -342,9 +399,12 @@ def check_interface(dep):
     readme = (PROTOCOL / "README.md").read_text()
     missing = [n for n in params | set(env) | {TX} if f"`{n}`" not in readme]
     assert not missing, f"README does not document {missing}"
-    fx = json.loads((FIXTURES / "generated-swap.json").read_text())
-    assert fx["expected"]["pool_ref"] == args["pool_ref"] and fx["expected"]["amount_out"] == args["amount_out"], \
-        "generated fixture and invoke args disagree"
+    digest = tir_digest(tii)
+    for name in (n for n in POSITIVE if n.startswith("generated")):
+        fx = json.loads((FIXTURES / name).read_text())
+        assert fx.get("tir_sha256") == digest, \
+            f"main.tx3 builds TIR {digest}, not {name}'s; regenerate it (see README)"
+    check_args(args, json.loads((FIXTURES / "generated-swap.json").read_text()), dep)
 
 
 def main():
@@ -357,19 +417,20 @@ def main():
         print(f"FAIL interface: {err}")
         failures += 1
     decoded = {}
-    for name in ("reference", "generated"):
-        fx = json.loads((FIXTURES / f"{name}-swap.json").read_text())
+    for name in POSITIVE:
+        fx = json.loads((FIXTURES / name).read_text())
         try:
             decoded[name] = check_swap(load_tx(fx), dep, fx["expected"])
             print(f"ok   {name}: {fx['tx_hash']} matches the expected effects")
         except Reject as err:
             print(f"FAIL {name}: {fx['tx_hash']} breaks {err}")
             failures += 1
-    if len(decoded) == 2:
-        if decoded["reference"] == decoded["generated"]:
+    if len(decoded) == len(POSITIVE):
+        shapes = list(decoded.values())
+        if all(shape == shapes[0] for shape in shapes):
             print("ok   generated and reference swaps have the same decoded shape")
         else:
-            print(f"FAIL shape differs: {decoded['reference']} != {decoded['generated']}")
+            print(f"FAIL shape differs: {decoded}")
             failures += 1
     for path in sorted((FIXTURES / "negative").glob("*.json")):
         neg = json.loads(path.read_text())

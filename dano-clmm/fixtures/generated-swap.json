@@ -2,6 +2,7 @@
   "description": "Unsigned tx from `trix invoke --profile preprod --skip-submit --args-json-path invoke-args/swap_single_pool.json` (trix 0.28.0) against the live pool snapshot in deployment.json. Never signed or submitted. Execution units and fee are TRP placeholders.",
   "tx_hash": "e04d43c3b0ea63cc1ee46f182e69ca1ba5d9650c2e75e298adbe8fa884b60d4f",
   "network": "preprod",
+  "tir_sha256": "8fbdd53c784ebcf7759af8eb981afc94c2a8559e2ad3cd8796f2e8afff8a167e",
   "expected": {
     "pool_ref": "db368ff5cad1ec411e7600e99dee10fd24dc18010d130cb3f2724cf18293406d#0",
     "staking_ref": "84df84b1e1365d6cd74cb292120dde51f2bcafe8651bbee2521c3cd706ce1666#1",

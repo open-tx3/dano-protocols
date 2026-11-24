@@ -66,7 +66,7 @@ type ProtocolConfigDatum {
 
 /// Swap `amount_in` lovelace (token X) for exactly `amount_out` units of the
 /// pool's token Y through the pool at `pool_ref`, on the pool's first swap of
-/// the current Danogo epoch (the pool's staking reward is withdrawn with it).
+/// the current Danogo epoch (the pool's staking reward is withdrawn into it).
 tx swap_single_pool(
     /// Pool UTxO to swap through (the SDK's `poolOutRef`).
     pool_ref: UtxoRef,
@@ -77,12 +77,13 @@ tx swap_single_pool(
     /// Lovelace of token X (ADA) paid into the pool; the SDK's positive `deltaAmount`.
     amount_in: Int,
     /// Base units of token Y taken from the pool. The pool accepts only the exact
-    /// curve output for `amount_in` (the SDK's `calculateSwapOut` quote); check it
-    /// against your minimum (the SDK's `minOutChangeAmount`) before building.
+    /// curve output for `amount_in`, quoted with `staking_reward` added to reserve X
+    /// (the SDK's `calculateSwapOut`); check it against your minimum (the SDK's
+    /// `minOutChangeAmount`) before building.
     amount_out: Int,
     /// Danogo epoch at the validity start; the pool records it as `last_withdraw_epoch`.
     current_epoch: Int,
-    /// Lovelace in the pool's staking reward account, withdrawn in full.
+    /// Lovelace in the pool's staking reward account, withdrawn in full into the pool.
     staking_reward: Int,
     /// One byte: index of the pool input among the sorted transaction inputs.
     pool_index: Bytes,
@@ -92,7 +93,7 @@ tx swap_single_pool(
     delta_word: Bytes,
     /// First valid slot.
     since_slot: Int,
-    /// Last valid slot.
+    /// Last valid slot; the pool rejects `until_slot - since_slot` above 360.
     until_slot: Int,
 ) {
     locals {
@@ -132,7 +133,7 @@ tx swap_single_pool(
 
     output {
         to: Pool,
-        amount: pool + Ada(amount_in) + Ada(protocol_config.swap_fee) - AnyAsset(pool.token_y[0], pool.token_y[1], amount_out),
+        amount: pool + Ada(amount_in) + Ada(protocol_config.swap_fee) + Ada(staking_reward) - AnyAsset(pool.token_y[0], pool.token_y[1], amount_out),
         datum: PoolDatum {
             token_x: pool.token_x,
             token_y: pool.token_y,
@@ -151,7 +152,7 @@ tx swap_single_pool(
 
     output {
         to: Trader,
-        amount: source - Ada(amount_in) - Ada(protocol_config.swap_fee) + Ada(staking_reward) + AnyAsset(pool.token_y[0], pool.token_y[1], amount_out) - fees,
+        amount: source - Ada(amount_in) - Ada(protocol_config.swap_fee) + AnyAsset(pool.token_y[0], pool.token_y[1], amount_out) - fees,
     }
 
     cardano::withdrawal {

@@ -35,6 +35,8 @@ Compares the transaction built by
 | Trader net | +306 721 fUSDM, −1 613 830 lovelace (1 000 000 + 100 000 + fee 513 830) | +366 101 fUSDM, −1 100 000 lovelace − placeholder fee | checked |
 | Reference inputs | pool script `2e19…d136#0`, config `3775…68a4#0`, staking `84df…1666#1` | same three | checked |
 | Withdrawals | 0 from pool validator, 0 from staking script `889df4c3…bce8` | same | checked |
+| Staking reward | 0 | 0 (a non-zero reward goes to the pool successor) | checked |
+| Validity window | 360 slots | 360 slots | checked (at most 360) |
 | Spend redeemer | `00 03 00 00 ‖ 0x…0f4240` | same bytes | checked |
 | Swap-check redeemer | `01 03 00 00 ‖ 0x…0f4240` (config is reference input 1) | same bytes | checked |
 | Staking redeemer | `00 03 00 00 ‖ 0x…0f4240` | same bytes | checked |
@@ -53,6 +55,10 @@ output CBOR from the producing transactions):
 | `amount_out` 366 102 (curve + 1), [negative fixture](../fixtures/negative/wrong-minimum.json) | swap check fails |
 | `amount_out` 366 100 and 365 101 (below the curve) | swap check fails: the pool takes only the exact output |
 | No staking withdrawal, [negative fixture](../fixtures/negative/absent-epoch-reference.json) | swap check fails |
+| Staking reward 5 ADA paid into the pool, `amount_out` 365 847 (quote with the reward in reserve X), [fixture](../fixtures/generated-reward-swap.json) `461db184…` | passes with the same budgets |
+| Staking reward 5 ADA paid to the trader, `amount_out` 365 847 (the first revision of this interface), [negative fixture](../fixtures/negative/reward-to-trader.json) | swap check fails |
+| Validity 360 slots (the generated swap) | passes |
+| Validity 600 slots, [negative fixture](../fixtures/negative/wide-validity-window.json) | swap check fails |
 
 ```bash
 aiken tx simulate --zero-time 1655683200000 --zero-slot 0 --slot-length 1000 \
@@ -76,7 +82,13 @@ and `resolved_outputs`.
    collateral; the TRP does not yet. The generated transaction uses a separate
    ADA-only trader UTxO as collateral.
 5. **`network_id`.** Present in the generated body (field 15), absent in the reference.
-6. **Inputs, amounts and slots.** The pool state, trader wallet and time differ,
+6. **Staking reward.** `submitSwap` at the pinned revision quotes without the
+   reward and leaves the withdrawn reward in the trader's change; the validator
+   rejects that whenever the reward is not zero (see the table above). The
+   interface pays it into the pool successor and quotes with it, as the
+   validator and the SDK's `calculateSwapOut` do. With a zero reward, as in both
+   transactions here, the two agree.
+7. **Inputs, amounts and slots.** The pool state, trader wallet and time differ,
    so the output amount, epoch and indices are recomputed for the later state.
 
 ## Reproduce

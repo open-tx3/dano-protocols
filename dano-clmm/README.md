@@ -25,7 +25,7 @@ Tagged release source: [`v0.1.0`](https://github.com/open-tx3/dano-protocols/tre
 
 | Transaction | Network | What it does |
 |---|---|---|
-| `swap_single_pool` | preprod | Spends the pool UTxO and recreates it with `amount_in` + swap fee more lovelace and `amount_out` less token Y, updates the pool datum, and pays `amount_out` token Y to the trader. Runs the pool validator (spend), its withdraw-zero swap check, and the pool's staking script. |
+| `swap_single_pool` | preprod | Spends the pool UTxO and recreates it with `amount_in` + swap fee + `staking_reward` more lovelace and `amount_out` less token Y, updates the pool datum, and pays `amount_out` token Y to the trader. Runs the pool validator (spend), its withdraw-zero swap check, and the pool's staking script. |
 
 Only the trader signs. The pool is checked by script, not by a key.
 
@@ -33,6 +33,17 @@ The pool validator accepts only the exact curve output for `amount_in`, so
 `amount_out` is the SDK quote (`calculateSwapOut`), not a minimum. The SDK's
 `minOutChangeAmount` is a client-side guard: compare the quote with your
 minimum before building, as `submitSwap` does.
+
+The withdrawn staking reward belongs to the pool: the validator requires it in
+the pool successor and prices the swap with it added to reserve X.
+`calculateSwapOut` quotes that way. **Deviation from the SDK:** `submitSwap` at
+the pinned revision quotes without the reward and leaves it in the trader's
+change, which the validator rejects whenever the reward is not zero. This
+interface follows the validator. On preprod the pools' reward accounts are
+empty today, so both agree in practice.
+
+The validator also rejects a validity interval wider than 360 slots (six
+minutes): keep `until_slot − since_slot ≤ 360`.
 
 **Epoch state.** Danogo counts its own epochs: on preprod a 30-minute period,
 `floor((posix_ms − 1647899091000) / 1800000) + 328`. A pool whose datum
@@ -70,13 +81,13 @@ Every coordinate and where it was read is in
 | `staking_ref` | UtxoRef | `txhash#index` | UTxO holding the pool's staking script (the SDK's `stakingOutRef`). |
 | `trader_utxo` | UtxoRef | `txhash#index` | Trader UTxO that pays. Pinning it fixes the input order the redeemers index. |
 | `amount_in` | Int | lovelace | ADA paid into the pool, excluding the swap fee (the SDK's positive `deltaAmount`). |
-| `amount_out` | Int | token Y base unit | Token Y taken from the pool: the exact curve output for `amount_in`. |
+| `amount_out` | Int | token Y base unit | Token Y taken from the pool: the exact curve output for `amount_in`, with `staking_reward` added to reserve X. |
 | `current_epoch` | Int | Danogo epoch | Danogo epoch at `since_slot`; recorded as the pool's `last_withdraw_epoch`. |
-| `staking_reward` | Int | lovelace | Balance of the `poolstaking` reward account, withdrawn in full to the trader. |
+| `staking_reward` | Int | lovelace | Balance of the `poolstaking` reward account, withdrawn in full into the pool successor. |
 | `pool_index` | Bytes | 1 byte | Index of `pool_ref` among the transaction inputs sorted by `txhash#index`. |
 | `config_index` | Bytes | 1 byte | Index of `protocol_config_ref` among the sorted reference inputs (`pool_script_ref`, `protocol_config_ref`, `staking_ref`). |
 | `delta_word` | Bytes | 32 bytes | `amount_in` as a big-endian unsigned integer. |
-| `since_slot`, `until_slot` | Int | slot | Validity interval. The SDK uses now − 2 min to now + 4 min. |
+| `since_slot`, `until_slot` | Int | slot | Validity interval, at most 360 slots wide (`until_slot − since_slot ≤ 360`). The SDK uses now − 2 min to now + 4 min. |
 
 Tx3 cannot yet compute an input's position or encode an integer as bytes, so
 the caller derives `pool_index`, `config_index` and `delta_word` from the other
@@ -101,10 +112,10 @@ With `p` the pool input, `c` the protocol configuration datum and
 
 | Output | Value | Datum |
 |---|---|---|
-| Pool successor at `pool` | `p` + `amount_in` + `c.swap_fee` lovelace − `amount_out` token Y | `p`'s datum with `platform_fee_x + fee`, `total_swap_fee + c.swap_fee`, `last_withdraw_epoch = current_epoch` |
-| Trader | net + `amount_out` token Y, − (`amount_in` + `c.swap_fee` + tx fee − `staking_reward`) lovelace | none |
+| Pool successor at `pool` (output 0) | `p` + `amount_in` + `c.swap_fee` + `staking_reward` lovelace − `amount_out` token Y | `p`'s datum with `platform_fee_x + fee`, `total_swap_fee + c.swap_fee`, `last_withdraw_epoch = current_epoch` |
+| Trader | net + `amount_out` token Y, − (`amount_in` + `c.swap_fee` + tx fee) lovelace | none |
 
-Withdrawals: 0 from `PoolCheck`, `staking_reward` from `poolstaking`.
+Withdrawals: 0 from `PoolCheck`, `staking_reward` from `poolstaking` (paid into the pool successor).
 Reference inputs: `pool_script_ref`, `protocol_config_ref`, `staking_ref`.
 
 Reference swap: preprod transaction
@@ -142,10 +153,21 @@ when they are published.
 
 `trix check` and `trix build`, then
 [`scripts/check-swap.py`](../scripts/check-swap.py), which decodes the recorded
-and the generated swap with their resolved inputs, recomputes the SDK curve
-output, fees, datum update, redeemers and epoch withdrawal, and requires the
-[negative fixtures](fixtures/negative/) (wrong pool out-ref, wrong minimum,
-absent epoch reference) to be rejected.
+and the generated swaps with their resolved inputs, recomputes the SDK curve
+output, fees, datum update, redeemers, epoch withdrawal and validity window, and
+requires the [negative fixtures](fixtures/negative/) (wrong pool out-ref, wrong
+minimum, absent epoch reference, reward paid to the trader, validity window
+wider than 360 slots) to be rejected.
+[`fixtures/generated-reward-swap.json`](fixtures/generated-reward-swap.json)
+covers a non-zero staking reward; preprod rewards are zero, so that swap is
+checked by `aiken tx simulate` only.
+
+The generated fixtures record the SHA-256 of the `swap_single_pool` TIR they
+were built from (`tir_sha256`), and the check compares it with the freshly built
+TII. After any change to `main.tx3` that alters the transaction, regenerate
+them: rerun the `trix invoke --skip-submit` above with each fixture's inputs,
+re-simulate the result with `aiken tx simulate`, and write the new `tx_cbor`,
+`tx_hash` and `tir_sha256` (the value the failing check prints).
 
 ## License
 
