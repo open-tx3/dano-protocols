@@ -1,0 +1,17 @@
+{
+  "trader": "addr_test1qq7ryz6elnkr7taz0ausqhq7aj2c9l605a34jcq9qhkrzvyg4crtgfpvxyrg6zqlfgq409m7ydc2a6smvy4mrp0g29msz8vk5s",
+  "pool": "addr_test1xqzqg8pudw58kvlje84h7ld74cajvqpu8cve6suthxvn9g5gnh6vxxytfck7gqchltwx7uwetrvycvas8np380jhhn5q3rl0f6",
+  "poolstaking": "stake_test17zyfmaxrrz95ut0yqvtl4hr0w8v43kzvxwcrescnhetme6qq8te26",
+  "pool_ref": "db368ff5cad1ec411e7600e99dee10fd24dc18010d130cb3f2724cf18293406d#0",
+  "staking_ref": "84df84b1e1365d6cd74cb292120dde51f2bcafe8651bbee2521c3cd706ce1666#1",
+  "trader_utxo": "e3c8feaf24df734424565b890ecf66fe27cf89aa60941ebe6c5d2b218528714c#4",
+  "amount_in": 1000000,
+  "amount_out": 366101,
+  "current_epoch": 82357,
+  "staking_reward": 0,
+  "pool_index": "00",
+  "config_index": "01",
+  "delta_word": "00000000000000000000000000000000000000000000000000000000000f4240",
+  "since_slot": 139869410,
+  "until_slot": 139869770
+}

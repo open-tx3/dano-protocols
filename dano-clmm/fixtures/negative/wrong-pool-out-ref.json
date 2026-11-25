@@ -1,0 +1,8 @@
+{
+  "reason": "pool-out-ref",
+  "description": "The generated swap checked against a request that names another ADA/fUSDM pool UTxO: the transaction spends a pool other than the one the request quoted.",
+  "base": "generated-swap.json",
+  "patch": {
+    "expected.pool_ref": "fea6e78e17974736f250870d553831f4d897df138cef6f87b209b4008092313c#0"
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "network": "preprod",
+  "source": {
+    "repository": "https://github.com/dano-finance/clmm-sdk",
+    "revision": "0416dc1f3531ce77eec7664ea3947f192a3aca40",
+    "package": "danogo-clmm@0.1.6 (MIT)",
+    "swap_builder": "https://github.com/dano-finance/clmm-sdk/blob/0416dc1f3531ce77eec7664ea3947f192a3aca40/src/sdk.ts#L196-L399",
+    "curve": "https://github.com/dano-finance/clmm-sdk/blob/0416dc1f3531ce77eec7664ea3947f192a3aca40/src/utils.ts#L18-L117",
+    "redeemer": "https://github.com/dano-finance/clmm-sdk/blob/0416dc1f3531ce77eec7664ea3947f192a3aca40/src/redeemer.ts#L36-L125",
+    "pool_datum": "https://github.com/dano-finance/clmm-sdk/blob/0416dc1f3531ce77eec7664ea3947f192a3aca40/src/datum.ts#L28-L70",
+    "constants": "https://github.com/dano-finance/clmm-sdk/blob/0416dc1f3531ce77eec7664ea3947f192a3aca40/src/constants.ts#L11-L17",
+    "epoch": "https://github.com/dano-finance/clmm-sdk/blob/0416dc1f3531ce77eec7664ea3947f192a3aca40/src/utils.ts#L6-L15"
+  },
+  "pool_script": {
+    "hash": "04041c3c6ba87b33f2c9eb7f7dbeae3b26003c3e199d438bb99932a2",
+    "language": "PlutusV3",
+    "ref": "2e19cca74e3badcab26aef7574aa1885ba97228a254ca227ba2f79f2b75fd136#0",
+    "reward_account": "f004041c3c6ba87b33f2c9eb7f7dbeae3b26003c3e199d438bb99932a2",
+    "reward_address": "stake_test17qzqg8pudw58kvlje84h7ld74cajvqpu8cve6suthxvn9gs6230mc",
+    "source": "SDK POOL_SCRIPT_HASH_PREPROD / POOL_SCRIPT_OUT_REF_PREPROD; reference script hash read from the UTxO"
+  },
+  "protocol_config": {
+    "ref": "3775af36f485f9c97101ee5b9b360c34f0f8e12186bc9060f358b7fc8ce468a4#0",
+    "datum": {
+      "platform_fee_rate": 1000,
+      "swap_fee": 100000
+    },
+    "units": "platform_fee_rate in 1/10000 of the LP fee; swap_fee in lovelace per swap",
+    "source": "SDK PROTOCOL_CONFIG_OUT_REF_PREPROD; datum read from the UTxO"
+  },
+  "danogo_epoch": {
+    "epoch_length_ms": 1800000,
+    "boundary_ms": 1647899091000,
+    "boundary_epoch": 328,
+    "note": "SDK getEpoch for preprod: a 30-minute Danogo epoch, not the Cardano epoch"
+  },
+  "slot_config": {
+    "zero_time_ms": 1655683200000,
+    "zero_slot": 0,
+    "slot_length_ms": 1000,
+    "note": "preprod: posix seconds = slot + 1655683200"
+  },
+  "pool": {
+    "pair": "ADA / fUSDM",
+    "nft": {
+      "policy": "04041c3c6ba87b33f2c9eb7f7dbeae3b26003c3e199d438bb99932a2",
+      "name": "5f3deeda6aced9f31a8149e65f745c8bf158467b82ad6e3450803a1af119f62d"
+    },
+    "address": "addr_test1xqzqg8pudw58kvlje84h7ld74cajvqpu8cve6suthxvn9g5gnh6vxxytfck7gqchltwx7uwetrvycvas8np380jhhn5q3rl0f6",
+    "token_x": {
+      "policy": "",
+      "name": "",
+      "label": "ADA (lovelace)"
+    },
+    "token_y": {
+      "policy": "834a15101873b4e1ddfaa830df46792913995d8738dcde34eda27905",
+      "name": "665553444d",
+      "label": "fUSDM"
+    },
+    "lp_fee_rate": 30,
+    "staking_script_hash": "889df4c3188b4e2de40317fadc6f71d958d84c33b03cc313be57bce8",
+    "staking_reward_address": "stake_test17zyfmaxrrz95ut0yqvtl4hr0w8v43kzvxwcrescnhetme6qq8te26",
+    "staking_ref": "84df84b1e1365d6cd74cb292120dde51f2bcafe8651bbee2521c3cd706ce1666#1"
+  },
+  "historical": {
+    "description": "Reproducible: the SDK-built reference swap and every UTxO it resolved, pinned in reference-swap.json.",
+    "tx_hash": "4ea0cf1f96a1c6db0b860b7c1697dc876f3c4a9639afcfdc0f1a360ff06c7675",
+    "pool_ref": "8dc90f23ade44df76ac02d1883b94ea26708d5cfbaa1536077505ef9252b1ba9#0"
+  },
+  "live": {
+    "description": "Refresh before a live build: the pool UTxO moves on every swap, the epoch and validity come from the current time, and the trader UTxO is the caller's own. Snapshot taken at preprod slot 139869530.",
+    "pool_ref": "db368ff5cad1ec411e7600e99dee10fd24dc18010d130cb3f2724cf18293406d#0",
+    "trader_utxo": "e3c8feaf24df734424565b890ecf66fe27cf89aa60941ebe6c5d2b218528714c#4",
+    "current_epoch": 82357,
+    "since_slot": 139869410,
+    "until_slot": 139869770
+  }
+}
